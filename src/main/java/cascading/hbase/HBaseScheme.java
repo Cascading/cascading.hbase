@@ -187,7 +187,7 @@ public class HBaseScheme extends HBaseAbstractScheme {
 				   objectInBytes = Bytes.toBytes(coercible.coerce( object, String.class ).toString());
 				}
 				else {
-					objectInBytes = Bytes.toBytes(object.toString());
+					objectInBytes = object == null ? null : Bytes.toBytes(object.toString());
 				}
 
 				if (null == objectInBytes) {
