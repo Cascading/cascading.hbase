@@ -26,10 +26,14 @@ import org.apache.hadoop.hbase.mapreduce.TableOutputFormat;
 
 import cascading.hbase.helper.TableInputFormat;
 
+import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.mapred.FileInputFormat;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.OutputCollector;
 import org.apache.hadoop.mapred.RecordReader;
+import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.security.token.Token;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -150,6 +154,26 @@ public class HBaseTap extends Tap<JobConf, RecordReader, OutputCollector> {
 		return hBaseAdmin;
 	}
 
+    private void obtainToken(JobConf conf) {
+        if (User.isHBaseSecurityEnabled(conf)) {
+            String user = conf.getUser();
+            LOG.info("obtaining HBase token for: {}", user);
+            try {
+                UserGroupInformation currentUser = UserGroupInformation.getCurrentUser();
+                user = currentUser.getUserName();
+                Credentials credentials = conf.getCredentials();
+                for(Token t : currentUser.getTokens()) {
+                    LOG.debug("Token {} is available", t);
+                    //there must be HBASE_AUTH_TOKEN exists, if not bad thing will happen, it's must be generated when job submission.
+                    if ("HBASE_AUTH_TOKEN".equalsIgnoreCase(t.getKind().toString())) {
+                        credentials.addToken(t.getKind(), t);
+                    }
+                }
+            } catch (IOException e) {
+                throw new RuntimeException("Unable to obtain HBase auth token for " + user, e);
+            }
+        }
+    }
 
 
 	public boolean resourceExists(JobConf conf) throws IOException {
@@ -166,8 +190,9 @@ public class HBaseTap extends Tap<JobConf, RecordReader, OutputCollector> {
 		LOG.debug("sinking to table: {}", tableName);
 		// TODO: next 5 lines were added, and commented area was taken out
 		// hbase table wasn't being created during tests... wtf?
+        obtainToken(conf);
 		try {
-			createResource(conf);
+            createResource(conf);
 		} catch (IOException e) {
 			throw new RuntimeException(tableName + " does not exist !");
 		}
@@ -196,7 +221,7 @@ public class HBaseTap extends Tap<JobConf, RecordReader, OutputCollector> {
 		LOG.debug("sourcing from table: {}", tableName);
 		FileInputFormat.addInputPaths(conf, tableName);
         conf.set(TableInputFormat.INPUT_TABLE, tableName);
-    
+        obtainToken(conf);
 		super.sourceConfInit(flowProcess, conf);
 	}
 
