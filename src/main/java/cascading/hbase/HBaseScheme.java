@@ -138,12 +138,12 @@ public class HBaseScheme extends HBaseAbstractScheme {
 				byte[] cellValue = row
 						.getValue(familyNameBytes, fieldNameBytes);
 
-        Object deserialized = Bytes.toString( cellValue );
         Type type = fields.getType( k );
-        if( type instanceof CoercibleType )
+        if( type instanceof CoercibleType ) {
+          Object deserialized = Bytes.toString( cellValue );
           deserialized = ( (CoercibleType<?>) type ).canonical( deserialized );
-
-        result.add( deserialized );
+          result.add( deserialized );
+        } else result.add( cellValue );
 			}
 		}
 		sourceCall.getIncomingEntry().setTuple(result);
