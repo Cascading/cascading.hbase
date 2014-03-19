@@ -156,6 +156,7 @@ public class HBaseTap extends Tap<JobConf, RecordReader, OutputCollector> {
 	}
 
     private void obtainToken(JobConf conf) {
+      try {
         if (User.isHBaseSecurityEnabled(conf)) {
             String user = conf.getUser();
             LOG.info("obtaining HBase token for: {}", user);
@@ -174,6 +175,9 @@ public class HBaseTap extends Tap<JobConf, RecordReader, OutputCollector> {
                 throw new RuntimeException("Unable to obtain HBase auth token for " + user, e);
             }
         }
+      } catch (NoSuchMethodError e) {
+        LOG.debug("Security token not required for HBase 0.90.x versions.");
+      }
     }
 
 

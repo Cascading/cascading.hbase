@@ -26,6 +26,7 @@ import java.util.List;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.HRegionLocation;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
@@ -141,8 +142,13 @@ public abstract class TableInputFormatBase
             if ( !includeRegionInSplit(keys.getFirst()[i], keys.getSecond()[i])) {
                 continue;
             }
-            String regionLocation = table.getRegionLocation(keys.getFirst()[i]).
-                    getHostname();
+            HRegionLocation rLocation = table.getRegionLocation(keys.getFirst()[i]);
+            String regionLocation = "localhost";
+            try {
+              regionLocation = rLocation.getHostname();
+            } catch (NoSuchMethodError e) {
+              regionLocation = rLocation.getServerAddress().getHostname();
+            }
             byte[] startRow = scan.getStartRow();
             byte[] stopRow = scan.getStopRow();
             // determine if the given start an stop key fall into the region
