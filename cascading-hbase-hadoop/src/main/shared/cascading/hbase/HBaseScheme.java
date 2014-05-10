@@ -13,6 +13,7 @@
 package cascading.hbase;
 
 import cascading.flow.FlowProcess;
+import cascading.hbase.helper.TableInputFormat;
 import cascading.scheme.Scheme;
 import cascading.scheme.SinkCall;
 import cascading.scheme.SourceCall;
@@ -25,7 +26,7 @@ import cascading.util.Util;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
-import org.apache.hadoop.hbase.mapreduce.TableInputFormat;
+import org.apache.hadoop.hbase.filter.Filter;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.io.DataOutputBuffer;
 import org.apache.hadoop.io.Writable;
@@ -65,6 +66,8 @@ public class HBaseScheme extends HBaseAbstractScheme
   private byte[] startRow;
   /** byte[] stopRow */
   private byte[] stopRow;
+  /** String representation of a filter */
+  private String filter;
 
   private boolean isFullyQualified = false;
 
@@ -99,6 +102,91 @@ public class HBaseScheme extends HBaseAbstractScheme
 
     validate();
     }
+
+  /**
+   * Constructor HBaseScheme creates a new HBaseScheme instance.
+   *
+   * @param keyFields   of type Fields
+   * @param familyNames of type String[]
+   * @param valueFields of type Fields[]
+   * @param filter      of type Filter
+   */
+  public HBaseScheme( Fields keyFields, String[] familyNames,
+                      Fields[] valueFields, Filter filter )
+  {
+      this.keyField = keyFields;
+      // The column Names only holds the family Names.
+      this.familyNames = familyNames;
+      this.valueFields = valueFields;
+      try {
+          this.filter = TableInputFormat.convertFilterToString(filter);
+      } catch (IOException e) {
+          LOG.error("Unable to convert Filter to String", e);
+      }
+
+      setSourceSink( this.keyField, this.valueFields );
+
+      validate();
+  }
+
+  /**
+   * Constructor HBaseScheme creates a new HBaseScheme instance.
+   *
+   * @param keyFields   of type Fields
+   * @param familyNames of type String[]
+   * @param valueFields of type Fields[]
+   * @param filter      of type Filter
+   * @param startRow    of type byte[]
+   */
+  public HBaseScheme( Fields keyFields, String[] familyNames,
+                      Fields[] valueFields, Filter filter, byte[] startRow )
+  {
+      this.keyField = keyFields;
+      // The column Names only holds the family Names.
+      this.familyNames = familyNames;
+      this.valueFields = valueFields;
+      try {
+          this.filter = TableInputFormat.convertFilterToString(filter);
+      } catch (IOException e) {
+          LOG.error("Unable to convert Filter to String", e);
+      }
+      this.startRow = startRow;
+
+      setSourceSink( this.keyField, this.valueFields );
+
+      validate();
+  }
+
+  /**
+   * Constructor HBaseScheme creates a new HBaseScheme instance.
+   *
+   * @param keyFields   of type Fields
+   * @param familyNames of type String[]
+   * @param valueFields of type Fields[]
+   * @param filter      of type Filter
+   * @param startRow    of type byte[]
+   * @param stopRow     of type byte[]
+   */
+  public HBaseScheme( Fields keyFields, String[] familyNames,
+                      Fields[] valueFields, Filter filter, byte[] startRow,
+                      byte[] stopRow)
+  {
+      this.keyField = keyFields;
+      // The column Names only holds the family Names.
+      this.familyNames = familyNames;
+      this.valueFields = valueFields;
+      try {
+          this.filter = TableInputFormat.convertFilterToString(filter);
+      } catch (IOException e) {
+          LOG.error("Unable to convert Filter to String", e);
+      }
+      this.startRow = startRow;
+      this.stopRow = stopRow;
+
+      setSourceSink( this.keyField, this.valueFields );
+
+      validate();
+  }
 
   /**
    * Constructor HBaseScheme creates a new HBaseScheme instance.
@@ -273,7 +361,7 @@ public class HBaseScheme extends HBaseAbstractScheme
     // conf.setInputFormatClass(TableInputFormat.class);
     String columns = getColumns();
     setSourceInitFields( conf, columns );
-    LOG.debug( "sourcing from columns: {}", columns );
+    LOG.debug("sourcing from columns: {}", columns);
 
     if (startRow != null)
         conf.set(TableInputFormat.SCAN_ROW_START, Bytes.toHex(startRow));
@@ -281,6 +369,8 @@ public class HBaseScheme extends HBaseAbstractScheme
     if (stopRow != null)
         conf.set(TableInputFormat.SCAN_ROW_STOP, Bytes.toHex(stopRow));
 
+    if (filter != null)
+        conf.set(TableInputFormat.SCAN_FILTER, filter);
     }
 
   private String getColumns()

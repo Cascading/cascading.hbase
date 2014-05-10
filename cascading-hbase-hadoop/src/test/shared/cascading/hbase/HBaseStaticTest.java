@@ -16,6 +16,10 @@ import cascading.tap.Tap;
 import cascading.tap.hadoop.Lfs;
 import cascading.tuple.Fields;
 import org.apache.commons.io.FileUtils;
+import org.apache.hadoop.hbase.filter.CompareFilter;
+import org.apache.hadoop.hbase.filter.Filter;
+import org.apache.hadoop.hbase.filter.RowFilter;
+import org.apache.hadoop.hbase.filter.SubstringComparator;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.AfterClass;
 import org.junit.Test;
@@ -78,6 +82,55 @@ public class HBaseStaticTest extends HBaseTestsStaticScheme
     copyFlow.complete();
 
     verifySink( copyFlow, 5 );
+
+    }
+
+  @Test
+  public void testHBaseFilter() throws IOException
+    {
+
+    Properties properties = new Properties();
+    AppProps.setApplicationJarClass( properties, HBaseStaticTest.class );
+
+    deleteTable( configuration, "multitable" );
+
+    // create flow to read from local file and insert into HBase
+    Tap source = new Lfs( new TextLine(), inputFile );
+
+    Pipe parsePipe = new Pipe( "parse" );
+    parsePipe = new Each( parsePipe, new Fields( "line" ), new RegexSplitter(
+            new Fields( "num", "lower", "upper" ), " " ) );
+
+    Fields keyFields = new Fields( "num" );
+    String[] familyNames = {"left", "right"};
+    Fields[] valueFields = new Fields[]{new Fields( "lower" ),
+            new Fields( "upper" )};
+    Tap hBaseTap = new HBaseTap( "multitable", new HBaseScheme( keyFields,
+            familyNames, valueFields ), SinkMode.REPLACE );
+
+    FlowConnector flowConnector = createHadoopFlowConnector();
+    Flow parseFlow = flowConnector.connect( source, hBaseTap, parsePipe );
+
+    parseFlow.complete();
+
+    verifySink( parseFlow, 5 );
+
+    // create flow to read from hbase and save to local file
+    Tap sink = new Lfs( new TextLine(), "build/test/output/multifamily",
+            SinkMode.REPLACE );
+
+    Filter filter = new RowFilter(CompareFilter.CompareOp.EQUAL, new SubstringComparator("2"));
+
+    hBaseTap = new HBaseTap( "multitable", new HBaseScheme( keyFields,
+            familyNames, valueFields, filter));
+
+    Pipe copyPipe = new Each( "read", new Identity() );
+
+    Flow copyFlow = flowConnector.connect( hBaseTap, sink, copyPipe );
+
+    copyFlow.complete();
+
+    verifySink( copyFlow, 1 );
 
     }
 
