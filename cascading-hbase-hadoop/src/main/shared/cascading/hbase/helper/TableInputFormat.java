@@ -20,8 +20,6 @@
 
 package cascading.hbase.helper;
 
-import java.io.IOException;
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -29,14 +27,18 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.filter.Filter;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos;
+import org.apache.hadoop.hbase.protobuf.generated.FilterProtos;
 import org.apache.hadoop.hbase.util.Base64;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.mapred.FileInputFormat;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.JobConfigurable;
 import org.apache.hadoop.util.StringUtils;
+
+import java.io.IOException;
 
 /**
  * Convert HBase tabular data into a format that is consumable by Map/Reduce.
@@ -74,6 +76,12 @@ public class TableInputFormat extends TableInputFormatBase implements
   public static final String SCAN_CACHEBLOCKS = "hbase.mapreduce.scan.cacheblocks";
   /** The number of rows for caching that will be passed to scanners. */
   public static final String SCAN_CACHEDROWS = "hbase.mapreduce.scan.cachedrows";
+  /** Scan start row */
+  public static final String SCAN_ROW_START = "hbase.mapreduce.scan.row.start";
+  /** Scan stop row */
+  public static final String SCAN_ROW_STOP = "hbase.mapreduce.scan.row.stop";
+
+  public static final String SCAN_FILTER = "hbase.mapreduce.scan.filter";
 
   @Override
   public void configure( JobConf job )
@@ -139,7 +147,22 @@ public class TableInputFormat extends TableInputFormatBase implements
           scan.setCaching( Integer.parseInt( job.get( SCAN_CACHEDROWS ) ) );
           }
 
-        // false by default, full table scans generate too much BC churn
+        if( job.get( SCAN_ROW_START ) != null )
+          {
+          scan.setStartRow(Bytes.fromHex(job.get( SCAN_ROW_START)));
+          }
+
+        if( job.get( SCAN_ROW_STOP ) != null )
+          {
+          scan.setStopRow(Bytes.fromHex(job.get( SCAN_ROW_STOP)));
+          }
+
+        if( job.get( SCAN_FILTER ) != null )
+          {
+          scan.setFilter(convertStringToFilter(job.get(SCAN_FILTER)));
+          }
+
+            // false by default, full table scans generate too much BC churn
         scan.setCacheBlocks( ( job.getBoolean( SCAN_CACHEBLOCKS, false ) ) );
         }
       catch( Exception e )
@@ -246,6 +269,19 @@ public class TableInputFormat extends TableInputFormatBase implements
     }
 
   /**
+   * Writes the given filter into a Base64 encoded string.
+   *
+   * @param filter The filter to write out.
+   * @return The filter saved in a Base64 encoded string.
+   * @throws IOException When writing the filter fails.
+   */
+  public static String convertFilterToString( Filter filter ) throws IOException
+    {
+    FilterProtos.Filter proto = ProtobufUtil.toFilter( filter );
+    return Base64.encodeBytes( proto.toByteArray() );
+    }
+
+  /**
    * Converts the given Base64 string back into a Scan instance.
    *
    * @param base64 The scan details.
@@ -256,5 +292,18 @@ public class TableInputFormat extends TableInputFormatBase implements
     {
     ClientProtos.Scan protoScan = ClientProtos.Scan.parseFrom( Base64.decode( base64 ) );
     return ProtobufUtil.toScan( protoScan );
+    }
+
+  /**
+   * Converts the given Base64 string back into a Filter instance.
+   *
+   * @param base64 The filter details.
+   * @return The newly created Filter instance.
+   * @throws IOException When reading the filter instance fails.
+   */
+  public static Filter convertStringToFilter( String base64 ) throws IOException
+    {
+    FilterProtos.Filter protoFilter = FilterProtos.Filter.parseFrom( Base64.decode( base64 ));
+    return ProtobufUtil.toFilter( protoFilter );
     }
   }
