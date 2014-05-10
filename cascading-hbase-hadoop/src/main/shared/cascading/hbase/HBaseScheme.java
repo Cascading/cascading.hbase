@@ -12,10 +12,6 @@
 
 package cascading.hbase;
 
-import java.io.IOException;
-import java.lang.reflect.Type;
-import java.util.HashSet;
-
 import cascading.flow.FlowProcess;
 import cascading.scheme.Scheme;
 import cascading.scheme.SinkCall;
@@ -29,6 +25,7 @@ import cascading.util.Util;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
+import org.apache.hadoop.hbase.mapreduce.TableInputFormat;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.io.DataOutputBuffer;
 import org.apache.hadoop.io.Writable;
@@ -37,6 +34,10 @@ import org.apache.hadoop.mapred.OutputCollector;
 import org.apache.hadoop.mapred.RecordReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.lang.reflect.Type;
+import java.util.HashSet;
 
 /**
  * The HBaseScheme class is a {@link Scheme} subclass. It is used in conjunction
@@ -60,6 +61,10 @@ public class HBaseScheme extends HBaseAbstractScheme
   private transient String[] columns;
   /** Field fields */
   private transient byte[][] fields;
+  /** byte[] startRow */
+  private byte[] startRow;
+  /** byte[] stopRow */
+  private byte[] stopRow;
 
   private boolean isFullyQualified = false;
 
@@ -89,6 +94,52 @@ public class HBaseScheme extends HBaseAbstractScheme
     // The column Names only holds the family Names.
     this.familyNames = familyNames;
     this.valueFields = valueFields;
+
+    setSourceSink( this.keyField, this.valueFields );
+
+    validate();
+    }
+
+  /**
+   * Constructor HBaseScheme creates a new HBaseScheme instance.
+   *
+   * @param keyFields   of type Fields
+   * @param familyNames of type String[]
+   * @param valueFields of type Fields[]
+   * @param startRow of type byte[]
+   */
+  public HBaseScheme( Fields keyFields, String[] familyNames,
+                      Fields[] valueFields, byte[] startRow )
+    {
+    this.keyField = keyFields;
+    // The column Names only holds the family Names.
+    this.familyNames = familyNames;
+    this.valueFields = valueFields;
+    this.startRow = startRow;
+
+    setSourceSink( this.keyField, this.valueFields );
+
+    validate();
+    }
+
+  /**
+   * Constructor HBaseScheme creates a new HBaseScheme instance.
+   *
+   * @param keyFields   of type Fields
+   * @param familyNames of type String[]
+   * @param valueFields of type Fields[]
+   * @param startRow of type byte[]
+   * @param stopRow of type byte[]
+   */
+  public HBaseScheme( Fields keyFields, String[] familyNames,
+                      Fields[] valueFields, byte[] startRow, byte[] stopRow )
+    {
+    this.keyField = keyFields;
+    // The column Names only holds the family Names.
+    this.familyNames = familyNames;
+    this.valueFields = valueFields;
+    this.startRow = startRow;
+    this.stopRow = stopRow;
 
     setSourceSink( this.keyField, this.valueFields );
 
@@ -223,6 +274,13 @@ public class HBaseScheme extends HBaseAbstractScheme
     String columns = getColumns();
     setSourceInitFields( conf, columns );
     LOG.debug( "sourcing from columns: {}", columns );
+
+    if (startRow != null)
+        conf.set(TableInputFormat.SCAN_ROW_START, Bytes.toHex(startRow));
+
+    if (stopRow != null)
+        conf.set(TableInputFormat.SCAN_ROW_STOP, Bytes.toHex(stopRow));
+
     }
 
   private String getColumns()
