@@ -29,6 +29,7 @@ import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.exceptions.OutOfOrderScannerNextException;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.util.StringUtils;
 
@@ -44,6 +45,7 @@ public class TableRecordReaderImpl
   private ResultScanner scanner;
   private Scan scan = null;
   private HTable htable;
+  static final int MAX_RETRIES = 10;
 
   /**
    * Restart from survivable exceptions by creating a new scanner.
@@ -130,19 +132,49 @@ public class TableRecordReaderImpl
    */
   public boolean next( ImmutableBytesWritable key, Result value )
     throws IOException
+  {
+    return next(key, value, 1);
+  }
+
+  private boolean next( ImmutableBytesWritable key, Result value, int retryLevel )
+            throws IOException
     {
     Result result;
+    IOException tryRecovery = null;
+
     try
       {
-      result = this.scanner.next();
+        result = this.scanner.next();
+        if( result != null && result.size() > 0 )
+        {
+          key.set(result.getRow());
+          lastSuccessfulRow = key.get();
+          value.copyFrom(result);
+          return true;
+        }
+        return false;
       }
     catch( DoNotRetryIOException e )
       {
-      throw e;
+        if ((e.getCause() != null) &&
+            (OutOfOrderScannerNextException.class.isAssignableFrom(e.getCause().getClass())) &&
+            (retryLevel < MAX_RETRIES))
+        {
+          /* this is a DoNotRetry, because you should not retry the failing RPC >on the same scanner<; likely, the
+            * structure of regions has changed (splits or merges?).
+            *
+            * Re-attempting on a new scanner, which restart() provides, should be fine. */
+          LOG.warn( "recovering from out-of-order exception " + StringUtils.stringifyException( e ) + "(attempt #" + retryLevel+"/" + MAX_RETRIES+")" );
+          tryRecovery = e;
+        }
+      else
+        {
+          throw e;
+        }
       }
     catch( IOException e )
       {
-      LOG.debug( "recovered from " + StringUtils.stringifyException( e ) );
+      LOG.debug( "recovering from " + StringUtils.stringifyException( e ) + "(attempt #" + retryLevel+"/" + MAX_RETRIES+")" );
       if( lastSuccessfulRow == null )
         {
         LOG.warn( "We are restarting the first next() invocation," +
@@ -150,24 +182,28 @@ public class TableRecordReaderImpl
           " then you should consider killing this job and investigate" +
           " why it's taking so long." );
         }
+        tryRecovery = e;
+      }
+
+   if (tryRecovery != null)
+    {
       if( lastSuccessfulRow == null )
         restart( scan.getStartRow() );
-
       else
         {
         restart( lastSuccessfulRow );
         this.scanner.next();    // skip presumed already mapped row
         }
-      result = this.scanner.next();
-      }
 
-    if( result != null && result.size() > 0 )
-      {
-      key.set(result.getRow());
-      lastSuccessfulRow = key.get();
-      value.copyFrom(result);
-      return true;
-      }
+      if (retryLevel > MAX_RETRIES)
+        {
+          LOG.error( "maximum retry count without progress reached, failing I/O " + StringUtils.stringifyException( tryRecovery ));
+          throw tryRecovery;
+        }
+      return next (key, value, retryLevel + 1);
+    }
+
+
 
     return false;
     }
